@@ -31,6 +31,7 @@ with open("q-fastapi.csv", mode="r", encoding="utf-8") as file:
 
 @app.get("/api")
 def get_students(class_: Optional[List[str]] = Query(None, alias="class")):
+    return "abc"
     if class_:
         filtered = [s for s in students_data if s["class"] in class_]
     else:
