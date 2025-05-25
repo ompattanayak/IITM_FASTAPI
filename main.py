@@ -13,7 +13,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Read the CSV file once at startup
+# Read the CSV file once at startups
 students_data = []
 with open("q-fastapi.csv", mode="r", encoding="utf-8") as file:
     reader = csv.DictReader(file)
