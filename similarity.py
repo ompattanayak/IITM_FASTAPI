@@ -3,8 +3,18 @@ from pydantic import BaseModel
 from typing import List
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+# Enable CORS to allow all origins, methods, and headers
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],            # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],            # Allow POST, OPTIONS, GET, etc.
+    allow_headers=["*"],            # Allow all headers
+)
 
 class InputData(BaseModel):
     docs: List[str]
@@ -12,23 +22,20 @@ class InputData(BaseModel):
 
 @app.post("/similarity")
 def get_similarity(data: InputData):
-    # Combine documents and query
     texts = data.docs + [data.query]
 
-    # Convert texts to TF-IDF vectors
     vectorizer = TfidfVectorizer()
     tfidf_matrix = vectorizer.fit_transform(texts)
 
-    # Compute cosine similarity between query and all docs
-    query_vector = tfidf_matrix[-1]  # the last item is the query
-    doc_vectors = tfidf_matrix[:-1]  # all other items are the docs
+    query_vector = tfidf_matrix[-1]
+    doc_vectors = tfidf_matrix[:-1]
 
     similarities = cosine_similarity(query_vector, doc_vectors)[0]
 
-    # Rank documents by similarity
     sorted_docs = [doc for _, doc in sorted(zip(similarities, data.docs), key=lambda x: x[0], reverse=True)]
 
     return {"matches": sorted_docs}
+
 
 # from fastapi import FastAPI
 # from pydantic import BaseModel
