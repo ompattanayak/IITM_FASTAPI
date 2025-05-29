@@ -5,16 +5,19 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI()
 
-# Enable CORS to allow all origins, methods, and headers
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # Allow all origins
+    allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"],            # Allow POST, OPTIONS, GET, etc.
-    allow_headers=["*"],            # Allow all headers
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
+
 
 class InputData(BaseModel):
     docs: List[str]
