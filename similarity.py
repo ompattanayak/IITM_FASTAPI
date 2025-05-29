@@ -1,11 +1,11 @@
-from fastapi import FastAPI, Request
+
+from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List
-from sentence_transformers import SentenceTransformer, util
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 app = FastAPI()
-
-model = SentenceTransformer('all-MiniLM-L6-v2')
 
 class InputData(BaseModel):
     docs: List[str]
@@ -13,16 +13,42 @@ class InputData(BaseModel):
 
 @app.post("/similarity")
 def get_similarity(data: InputData):
-    doc_embeddings = model.encode(data.docs, convert_to_tensor=True)
-    query_embedding = model.encode(data.query, convert_to_tensor=True)
+    vectorizer = TfidfVectorizer()
+    all_text = data.docs + [data.query]
+    tfidf_matrix = vectorizer.fit_transform(all_text)
+    
+    scores = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1])[0]
+    results = sorted(zip(data.docs, scores), key=lambda x: x[1], reverse=True)
 
-    cosine_scores = util.cos_sim(query_embedding, doc_embeddings)[0]
-    results = sorted(zip(data.docs, cosine_scores), key=lambda x: x[1], reverse=True)
+    return {
+        "matches": [{"doc": doc, "score": float(score)} for doc, score in results]
+    }
 
-    top_matches = [{"doc": doc, "score": float(score)} for doc, score in results]
-    return {"matches": top_matches}
+# from fastapi import FastAPI, Request
+# from pydantic import BaseModel
+# from typing import List
+# from sentence_transformers import SentenceTransformer, util
 
+# app = FastAPI()
 
+# model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# class InputData(BaseModel):
+#     docs: List[str]
+#     query: str
+
+# @app.post("/similarity")
+# def get_similarity(data: InputData):
+#     doc_embeddings = model.encode(data.docs, convert_to_tensor=True)
+#     query_embedding = model.encode(data.query, convert_to_tensor=True)
+
+#     cosine_scores = util.cos_sim(query_embedding, doc_embeddings)[0]
+#     results = sorted(zip(data.docs, cosine_scores), key=lambda x: x[1], reverse=True)
+
+#     top_matches = [{"doc": doc, "score": float(score)} for doc, score in results]
+#     return {"matches": top_matches}
+
+#=================================
 # # main.py
 # from fastapi import FastAPI, HTTPException
 # from fastapi.middleware.cors import CORSMiddleware
