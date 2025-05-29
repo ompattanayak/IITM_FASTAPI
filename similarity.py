@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List
@@ -13,17 +12,49 @@ class InputData(BaseModel):
 
 @app.post("/similarity")
 def get_similarity(data: InputData):
+    # Combine documents and query
+    texts = data.docs + [data.query]
+
+    # Convert texts to TF-IDF vectors
     vectorizer = TfidfVectorizer()
-    all_text = data.docs + [data.query]
-    tfidf_matrix = vectorizer.fit_transform(all_text)
+    tfidf_matrix = vectorizer.fit_transform(texts)
+
+    # Compute cosine similarity between query and all docs
+    query_vector = tfidf_matrix[-1]  # the last item is the query
+    doc_vectors = tfidf_matrix[:-1]  # all other items are the docs
+
+    similarities = cosine_similarity(query_vector, doc_vectors)[0]
+
+    # Rank documents by similarity
+    sorted_docs = [doc for _, doc in sorted(zip(similarities, data.docs), key=lambda x: x[0], reverse=True)]
+
+    return {"matches": sorted_docs}
+
+# from fastapi import FastAPI
+# from pydantic import BaseModel
+# from typing import List
+# from sklearn.feature_extraction.text import TfidfVectorizer
+# from sklearn.metrics.pairwise import cosine_similarity
+
+# app = FastAPI()
+
+# class InputData(BaseModel):
+#     docs: List[str]
+#     query: str
+
+# @app.post("/similarity")
+# def get_similarity(data: InputData):
+#     vectorizer = TfidfVectorizer()
+#     all_text = data.docs + [data.query]
+#     tfidf_matrix = vectorizer.fit_transform(all_text)
     
-    scores = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1])[0]
-    results = sorted(zip(data.docs, scores), key=lambda x: x[1], reverse=True)
+#     scores = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1])[0]
+#     results = sorted(zip(data.docs, scores), key=lambda x: x[1], reverse=True)
 
-    return {
-        "matches": [{"doc": doc, "score": float(score)} for doc, score in results]
-    }
-
+#     return {
+#         "matches": [{"doc": doc, "score": float(score)} for doc, score in results]
+#     }
+#==========================
 # from fastapi import FastAPI, Request
 # from pydantic import BaseModel
 # from typing import List
