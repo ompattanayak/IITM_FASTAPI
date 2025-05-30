@@ -1,27 +1,31 @@
 import os
+import subprocess
+import glob
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
-from openai import OpenAI
-import subprocess
-import glob
+import openai
 
 # Constants
 REPO_URL = "https://github.com/basarat/typescript-book.git"
 LOCAL_PATH = "typescript-book"
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+AIPIPE_TOKEN = os.getenv("AIPIPE_TOKEN")
 
-# Clone the repo if not already cloned
+# Configure OpenAI client
+openai.api_key = AIPIPE_TOKEN
+openai.api_base = "https://aipipe.org/openrouter/v1"
+
+# Clone the repo if not already present
 if not os.path.exists(LOCAL_PATH):
     subprocess.run(["git", "clone", REPO_URL])
 
-# Init FastAPI app
+# FastAPI app init
 app = FastAPI()
 
-# CORS middleware
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,15 +34,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# OpenAI clients
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
-embedding_fn = OpenAIEmbeddingFunction(api_key=OPENAI_API_KEY)
-
-# New Chroma client setup
+# Embedding function & Chroma client
+embedding_fn = OpenAIEmbeddingFunction(api_key=AIPIPE_TOKEN)
 chroma_client = chromadb.PersistentClient(path=".chroma")
 collection = chroma_client.get_or_create_collection(name="typescript-book", embedding_function=embedding_fn)
 
-# Load markdown files from repo
+# Load markdown files as docs
 def load_markdown_files():
     file_paths = glob.glob(f"{LOCAL_PATH}/**/*.md", recursive=True)
     documents, ids = [], []
@@ -53,7 +54,7 @@ def load_markdown_files():
     if documents:
         collection.add(documents=documents, ids=ids)
 
-# Only load on first run
+# Load once if not already loaded
 if len(collection.get()["ids"]) == 0:
     load_markdown_files()
 
@@ -74,18 +75,19 @@ async def search_query(request: Request):
     if not query:
         return JSONResponse(content={"error": "Query is required"}, status_code=400)
 
-    # Retrieve context
+    # Retrieve top 3 docs
     results = collection.query(query_texts=[query], n_results=3)
     context = "\n\n".join(results["documents"][0])
 
-    # Construct prompt
+    # Build prompt
     prompt = f"Answer the question using the context below:\n\nContext:\n{context}\n\nQuestion:\n{query}"
 
-    # Generate answer
-    completion = openai_client.chat.completions.create(
-        model="gpt-4",
+    # Generate response from AIPipe model
+    response = openai.ChatCompletion.create(
+        model="openai/gpt-4.1-nano",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
     )
-    answer = completion.choices[0].message.content
+
+    answer = response['choices'][0]['message']['content']
     return {"answer": answer, "context": context}
