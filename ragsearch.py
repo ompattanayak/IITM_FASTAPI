@@ -7,6 +7,8 @@ def versions():
     import openai
     import fastapi
     import uvicorn
+    import chromadb  # Import here before using
+    
     return {
         "openai_version": openai.__version__,
         "fastapi_version": fastapi.__version__,
