@@ -1,6 +1,11 @@
 services:
   - type: web
-    name: fastapi-app
+    name: iitm-fastapi
+    env: python
+    region: oregon
+    plan: free
+    branch: main
     runtime: python
-    buildCommand: ""
+    buildCommand: pip install -r requirements.txt
     startCommand: ./start.sh
+    autoDeploy: true
