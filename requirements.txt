@@ -1,8 +1,7 @@
 fastapi
 uvicorn
-aiohttp
-chromadb
 gitpython
-requests
-python-dotenv
+transformers
 torch
+chromadb
+
