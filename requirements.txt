@@ -3,6 +3,5 @@ uvicorn
 aiohttp
 chromadb
 gitpython
-sentence-transformers
 requests
 python-dotenv
