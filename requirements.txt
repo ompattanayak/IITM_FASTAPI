@@ -1,5 +1,6 @@
 fastapi
 uvicorn
 gitpython
-scikit-learn
-numpy
+openai
+chromadb
+python-dotenv
