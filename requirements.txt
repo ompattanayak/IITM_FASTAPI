@@ -1,6 +1,5 @@
-fastapi
-uvicorn
-gitpython
-openai
-chromadb
-python-dotenv
+fastapi==0.95.2
+uvicorn==0.22.0
+gitpython==3.1.31
+chromadb==0.4.9
+openai==1.9.1
