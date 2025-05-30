@@ -1,3 +1,7 @@
 fastapi
 uvicorn
 sentence-transformers
+requests
+chromadb
+python-dotenv
+tiktoken
