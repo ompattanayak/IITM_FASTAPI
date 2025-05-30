@@ -1,1 +1,3 @@
-uvicorn RAGV1:app --host 0.0.0.0 --port 10000
+#!/bin/bash
+uvicorn ragsearch:app --host 0.0.0.0 --port 10000
+
