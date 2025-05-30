@@ -1,7 +1,5 @@
 fastapi
 uvicorn
 gitpython
-transformers
-torch
-chromadb
-
+scikit-learn
+numpy
