@@ -1,7 +1,8 @@
 fastapi
 uvicorn
+aiohttp
+chromadb
+gitpython
 sentence-transformers
 requests
-chromadb
 python-dotenv
-tiktoken
