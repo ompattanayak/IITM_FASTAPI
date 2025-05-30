@@ -29,7 +29,7 @@ for md_file in md_files:
 print(f"✅ Loaded {len(documents)} chunks.")
 
 # Step 3: Setup embedding model
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
 texts = [doc["text"] for doc in documents]
 metadatas = [{"source": doc["source"]} for doc in documents]
 embeddings = model.encode(texts).tolist()
