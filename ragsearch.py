@@ -3,20 +3,32 @@ from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from git import Repo
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+import openai
+import chromadb
+from chromadb.config import Settings
+from dotenv import load_dotenv
+
+# Load local environment variables
+load_dotenv()
 
 # Constants
 REPO_URL = "https://github.com/basarat/typescript-book.git"
 LOCAL_PATH = "typescript-book"
+CHROMA_COLLECTION_NAME = "typescript-book"
 
-# Step 1: Clone repo if needed
+# Set OpenAI config for AIPipe
+openai.api_key = os.getenv("AIPIPE_TOKEN")
+openai.api_base = "https://aipipe.org/openrouter/v1"  # OR "https://aipipe.org/openai/v1"
+
+if not openai.api_key:
+    raise ValueError("AIPIPE_TOKEN not found in environment variables")
+
+# Step 1: Clone repo if not present
 if not os.path.exists(LOCAL_PATH):
     Repo.clone_from(REPO_URL, LOCAL_PATH)
     print("✅ Cloned TypeScript book repo.")
 
-# Step 2: Load and chunk Markdown files
+# Step 2: Chunk Markdown files
 documents = []
 md_files = list(Path(LOCAL_PATH).rglob("*.md"))
 for md_file in md_files:
@@ -27,14 +39,37 @@ for md_file in md_files:
 
 print(f"✅ Loaded {len(documents)} chunks.")
 
+# Step 3: Generate embeddings via AIPipe
+def embed_texts(texts):
+    response = openai.Embedding.create(
+        input=texts,
+        model="openai/gpt-4.1-nano"  # Replace with your AIPipe-supported model
+    )
+    return [d["embedding"] for d in response["data"]]
+
 texts = [doc["text"] for doc in documents]
-sources = [doc["source"] for doc in documents]
+metadatas = [{"source": doc["source"]} for doc in documents]
+embeddings = embed_texts(texts)
 
-# Step 3: Fit TF-IDF vectorizer
-vectorizer = TfidfVectorizer(max_features=10000, stop_words='english')
-tfidf_matrix = vectorizer.fit_transform(texts)  # sparse matrix
+# Step 4: Setup ChromaDB
+chroma_client = chromadb.Client(Settings(
+    chroma_db_impl="duckdb+parquet",
+    persist_directory=".chroma"
+))
+collection = chroma_client.get_or_create_collection(name=CHROMA_COLLECTION_NAME)
 
-# Step 4: Create FastAPI app
+if collection.count() == 0:
+    collection.add(
+        documents=texts,
+        metadatas=metadatas,
+        ids=[str(i) for i in range(len(texts))],
+        embeddings=embeddings
+    )
+    print("✅ ChromaDB populated.")
+else:
+    print("ℹ️ ChromaDB already has data.")
+
+# Step 5: FastAPI app
 app = FastAPI()
 
 app.add_middleware(
@@ -45,26 +80,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Step 5: Search endpoint
+# Step 6: Search endpoint
 @app.get("/search")
 def search(q: str = Query(..., description="Your search query")):
-    query_vec = vectorizer.transform([q])
-    cosine_similarities = cosine_similarity(query_vec, tfidf_matrix).flatten()
-    top_indices = cosine_similarities.argsort()[::-1][:3]
+    query_embedding = embed_texts([q])[0]
+    results = collection.query(query_embeddings=[query_embedding], n_results=3)
 
     matches = [
         {
-            "text": texts[i],
-            "source": sources[i],
-            "score": float(cosine_similarities[i])
+            "text": doc,
+            "source": meta["source"]
         }
-        for i in top_indices if cosine_similarities[i] > 0
+        for doc, meta in zip(results["documents"][0], results["metadatas"][0])
     ]
 
-    if not matches:
-        return {"answer": "No relevant content found.", "sources": []}
-
     return {
-        "answer": matches[0]["text"],
+        "answer": matches[0]["text"] if matches else "No relevant content found.",
         "sources": [m["source"] for m in matches]
     }
