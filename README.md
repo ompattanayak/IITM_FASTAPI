@@ -1,5 +1,4 @@
 📁 fastapi-students-app
-├── main.py
-├── q-fastapi.csv
+├── ragsearch.py
 ├── requirements.txt
 └── start.sh
