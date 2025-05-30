@@ -6,6 +6,7 @@ from git import Repo
 from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb.config import Settings
+import os
 
 # Constants
 REPO_URL = "https://github.com/basarat/typescript-book.git"
