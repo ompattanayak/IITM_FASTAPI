@@ -1,6 +1,7 @@
 import os
 import subprocess
 import glob
+import shutil
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,9 +13,10 @@ import openai
 # Constants
 REPO_URL = "https://github.com/basarat/typescript-book.git"
 LOCAL_PATH = "typescript-book"
+CHROMA_PATH = ".chroma"
 AIPIPE_TOKEN = os.getenv("AIPIPE_TOKEN")
 
-# Configure OpenAI client
+# OpenAI config (AIPipe / OpenRouter proxy)
 openai.api_key = AIPIPE_TOKEN
 openai.api_base = "https://aipipe.org/openrouter/v1"
 
@@ -22,10 +24,14 @@ openai.api_base = "https://aipipe.org/openrouter/v1"
 if not os.path.exists(LOCAL_PATH):
     subprocess.run(["git", "clone", REPO_URL])
 
-# FastAPI app init
+# Clear ChromaDB if it exists (optional: for dev reset)
+if os.path.exists(CHROMA_PATH):
+    shutil.rmtree(CHROMA_PATH)
+
+# Initialize FastAPI
 app = FastAPI()
 
-# CORS Middleware
+# Add CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,27 +40,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Embedding function & Chroma client
+# Embedding + Chroma Client
 embedding_fn = OpenAIEmbeddingFunction(api_key=AIPIPE_TOKEN)
-chroma_client = chromadb.PersistentClient(path=".chroma")
+chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 collection = chroma_client.get_or_create_collection(name="typescript-book", embedding_function=embedding_fn)
 
-# Load markdown files as docs
-def load_markdown_files():
+# Chunking function
+def chunk_text(text, max_len=1000):
+    return [text[i:i + max_len] for i in range(0, len(text), max_len)]
+
+# Load Markdown files efficiently
+def load_markdown_files(max_files=100):
     file_paths = glob.glob(f"{LOCAL_PATH}/**/*.md", recursive=True)
+    file_paths = file_paths[:max_files]  # Optional limit
+
+    skip_files = {"readme.md", "summary.md"}
     documents, ids = [], []
-    for i, path in enumerate(file_paths):
+    doc_id_counter = 0
+
+    for path in file_paths:
+        filename = os.path.basename(path).lower()
+        if filename in skip_files:
+            continue
+
         try:
             with open(path, "r", encoding="utf-8") as f:
                 text = f.read()
-                documents.append(text)
-                ids.append(f"doc_{i}")
+                chunks = chunk_text(text)
+                for chunk in chunks:
+                    documents.append(chunk[:1000])  # Optional truncation
+                    ids.append(f"doc_{doc_id_counter}")
+                    doc_id_counter += 1
         except Exception as e:
             print(f"Error reading {path}: {e}")
+
     if documents:
         collection.add(documents=documents, ids=ids)
 
-# Load once if not already loaded
+# Load once on startup
 if len(collection.get()["ids"]) == 0:
     load_markdown_files()
 
@@ -65,8 +88,13 @@ async def add_document(request: Request):
     doc_id = body.get("id", f"doc_{len(collection.get()['ids'])}")
     if not document:
         return JSONResponse(content={"error": "Document is required"}, status_code=400)
-    collection.add(documents=[document], ids=[doc_id])
-    return {"status": "added", "id": doc_id}
+
+    # Optional: split long documents into chunks
+    chunks = chunk_text(document)
+    ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
+    collection.add(documents=chunks, ids=ids)
+
+    return {"status": "added", "ids": ids}
 
 @app.post("/search")
 async def search_query(request: Request):
@@ -75,14 +103,12 @@ async def search_query(request: Request):
     if not query:
         return JSONResponse(content={"error": "Query is required"}, status_code=400)
 
-    # Retrieve top 3 docs
     results = collection.query(query_texts=[query], n_results=3)
-    context = "\n\n".join(results["documents"][0])
+    context_chunks = results.get("documents", [[]])[0]
+    context = "\n\n".join(context_chunks)
 
-    # Build prompt
     prompt = f"Answer the question using the context below:\n\nContext:\n{context}\n\nQuestion:\n{query}"
 
-    # Generate response from AIPipe model
     response = openai.ChatCompletion.create(
         model="openai/gpt-4.1-nano",
         messages=[{"role": "user", "content": prompt}],
