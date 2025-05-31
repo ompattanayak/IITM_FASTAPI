@@ -9,24 +9,23 @@ from fastapi.responses import JSONResponse
 import chromadb
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
-# Constants
+# === Configuration ===
 REPO_URL = "https://github.com/basarat/typescript-book.git"
 LOCAL_PATH = "typescript-book"
 CHROMA_PATH = ".chroma"
 AIPIPE_TOKEN = os.getenv("AIPIPE_TOKEN")
 
-# Clone the repo if not already present
+# === Clone Repo If Needed ===
 if not os.path.exists(LOCAL_PATH):
     subprocess.run(["git", "clone", REPO_URL])
 
-# Optional: Clear Chroma for a clean start
+# === Optional: Clear previous Chroma DB ===
 if os.path.exists(CHROMA_PATH):
     shutil.rmtree(CHROMA_PATH)
 
-# FastAPI app setup
+# === FastAPI Setup ===
 app = FastAPI()
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,32 +34,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Embedding + Chroma
+# === ChromaDB Setup ===
 embedding_fn = OpenAIEmbeddingFunction(api_key=AIPIPE_TOKEN)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = chroma_client.get_or_create_collection(name="typescript-book", embedding_function=embedding_fn)
+collection = chroma_client.get_or_create_collection(
+    name="typescript-book", embedding_function=embedding_fn
+)
 
-# Split large docs into chunks
+# === Utility: Chunk Long Documents ===
 def chunk_text(text, max_len=1000):
     return [text[i:i + max_len] for i in range(0, len(text), max_len)]
 
-# Load files into Chroma
-def load_markdown_files(max_files=100):
-    file_paths = glob.glob(f"{LOCAL_PATH}/**/*.md", recursive=True)[:max_files]
-    skip_files = {"readme.md", "summary.md"}
+# === Load 10% of Markdown Files ===
+def load_markdown_files():
+    file_paths = glob.glob(f"{LOCAL_PATH}/**/*.md", recursive=True)
+    file_paths = [fp for fp in file_paths if os.path.basename(fp).lower() not in {"readme.md", "summary.md"}]
+
+    total_files = len(file_paths)
+    limit = max(1, int(total_files * 0.1))  # 10%
+    selected_files = file_paths[:limit]
+
     documents, ids = [], []
     doc_id_counter = 0
 
-    for path in file_paths:
-        filename = os.path.basename(path).lower()
-        if filename in skip_files:
-            continue
+    for path in selected_files:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 text = f.read()
                 chunks = chunk_text(text)
                 for chunk in chunks:
-                    documents.append(chunk[:1000])  # truncate for safety
+                    documents.append(chunk[:1000])  # ensure max 1000 chars
                     ids.append(f"doc_{doc_id_counter}")
                     doc_id_counter += 1
         except Exception as e:
@@ -69,16 +72,16 @@ def load_markdown_files(max_files=100):
     if documents:
         collection.add(documents=documents, ids=ids)
 
-# Load on startup if empty
+# === Load on Startup if Empty ===
 if len(collection.get()["ids"]) == 0:
     load_markdown_files()
 
-# 🔁 OpenRouter Chat Completion via HTTP
+# === Call OpenRouter Chat API ===
 def call_openrouter_chat(prompt):
     headers = {
         "Authorization": f"Bearer {AIPIPE_TOKEN}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost:8000",  # or your app domain
+        "HTTP-Referer": "http://localhost:8000",  # Your app URL
         "X-Title": "typescript-book-assistant"
     }
     payload = {
@@ -90,6 +93,7 @@ def call_openrouter_chat(prompt):
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 
+# === POST /add ===
 @app.post("/add")
 async def add_document(request: Request):
     body = await request.json()
@@ -103,6 +107,7 @@ async def add_document(request: Request):
     collection.add(documents=chunks, ids=ids)
     return {"status": "added", "ids": ids}
 
+# === POST /search ===
 @app.post("/search")
 async def search_query(request: Request):
     body = await request.json()
